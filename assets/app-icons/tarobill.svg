@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="TaroBill receipt icon">
+  <rect x="104" y="104" width="816" height="816" rx="176" fill="#fbfbfb"/>
+  <path d="M352 322L384 340L416 322L448 340L480 322L512 340L544 322L576 340L608 322L640 340L672 322V702L640 684L608 702L576 684L544 702L512 684L480 702L448 684L416 702L384 684L352 702Z" fill="none" stroke="#08080a" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M422 438H602M422 522H602M422 606H566" fill="none" stroke="#08080a" stroke-width="36" stroke-linecap="round"/>
+</svg>
