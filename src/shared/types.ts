@@ -9,12 +9,8 @@ export const isBillRecordIcon = (value: unknown): value is BillRecordIcon => {
   return typeof value === 'string' && LUCIDE_ICON_NAME_SET.has(value)
 }
 
-// 旧账单没有图标字段时继续沿用两个默认分类的语义图标。
-export const getDefaultBillRecordIcon = (typeId: string): BillRecordIcon => {
-  if (typeId === 'ai-bills') return 'sparkles'
-  if (typeId === 'medicine-bills') return 'pill'
-  return 'receipt-text'
-}
+// 账单默认统一使用智能灵感图标，无论账单类型如何，新增分类同样适用。
+export const getDefaultBillRecordIcon = (_typeId: string): BillRecordIcon => 'sparkles'
 
 export type BillType = {
   id: string
