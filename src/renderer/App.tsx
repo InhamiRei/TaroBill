@@ -296,6 +296,7 @@ function App() {
           )}
           <div className="brand-title">
             <strong>TaroBill</strong>
+            <span className="brand-version">v{__APP_VERSION__}</span>
           </div>
           <div className="sidebar-heading">
             <Tag size={18} />
