@@ -1,4 +1,4 @@
-import { AlertTriangle, X } from 'lucide-react'
+import { X } from 'lucide-react'
 
 export type ConfirmDialogState = {
   title: string
@@ -24,11 +24,10 @@ export function ConfirmDialog({ title, message, confirmLabel, danger, onConfirm,
     <div className="dialog-backdrop no-drag" role="presentation">
       <section className="dialog confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
         <header className="dialog-header">
-          <div className={danger ? 'confirm-icon danger' : 'confirm-icon'}><AlertTriangle size={20} /></div>
+          <h2 id="confirm-title">{title}</h2>
           <button className="icon-button" onClick={onClose}><X size={18} /></button>
         </header>
         <div className="confirm-copy">
-          <h2 id="confirm-title">{title}</h2>
           <p>{message}</p>
         </div>
         <footer className="dialog-actions">
