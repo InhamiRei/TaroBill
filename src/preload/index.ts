@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import type { TaroBillApi, WindowState } from '../shared/types'
+import { contextBridge, ipcRenderer } from 'electron';
+import type { TaroBillApi, WindowState } from '../shared/types';
 
 // preload 只负责把命名清晰的 IPC 白名单桥接给渲染进程。
 const api: TaroBillApi = {
@@ -22,11 +22,10 @@ const api: TaroBillApi = {
   endResize: () => ipcRenderer.invoke('window:resize-end'),
   isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
   onWindowState: (callback) => {
-    const listener = (_event: unknown, state: WindowState) => callback(state)
-    ipcRenderer.on('window:state', listener)
-    return () => ipcRenderer.removeListener('window:state', listener)
-  }
-}
+    const listener = (_event: unknown, state: WindowState) => callback(state);
+    ipcRenderer.on('window:state', listener);
+    return () => ipcRenderer.removeListener('window:state', listener);
+  },
+};
 
-contextBridge.exposeInMainWorld('taroBill', api)
-
+contextBridge.exposeInMainWorld('taroBill', api);

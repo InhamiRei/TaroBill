@@ -1,11 +1,11 @@
-import { Copy, Minus, Square, X } from 'lucide-react'
-import { getTaroBillApi } from '../previewApi'
+import { Copy, Minus, Square, X } from 'lucide-react';
+import { getTaroBillApi } from '../previewApi';
 
-const api = getTaroBillApi()
+const api = getTaroBillApi();
 
 type WindowControlsProps = {
-  maximized: boolean
-}
+  maximized: boolean;
+};
 
 // Windows 无原生标题栏，使用与工具栏一致的三个轻量窗控按钮。
 export function WindowControls({ maximized }: WindowControlsProps) {
@@ -21,6 +21,5 @@ export function WindowControls({ maximized }: WindowControlsProps) {
         <X size={16} />
       </button>
     </div>
-  )
+  );
 }
-
