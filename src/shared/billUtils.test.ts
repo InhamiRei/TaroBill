@@ -5,6 +5,7 @@ import {
   formatLocalDateTime,
   isValidLocalDateTime,
   parseAmountToCents,
+  summarizeAllTime,
   summarizeMonth,
   summarizeYear
 } from './billUtils'
@@ -73,6 +74,10 @@ describe('支出聚合', () => {
   it('年度统计汇总全年支出', () => {
     const summary = summarizeYear(records, 2026)
     expect(summary.totalCents).toBe(9490)
+  })
+
+  it('全部记录金额合计不限周期', () => {
+    expect(summarizeAllTime(records)).toBe(10267)
   })
 
   it('按日期和月份筛选并保持发生时间倒序', () => {

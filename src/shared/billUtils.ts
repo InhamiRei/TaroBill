@@ -139,6 +139,13 @@ export const summarizeYear = (records: BillRecord[], year: number): YearSummary 
   return { totalCents }
 }
 
+// 全部记录金额合计不限周期，供统计卡切换到「总支出」口径复用。
+export const summarizeAllTime = (records: BillRecord[]): number => {
+  let totalCents = 0
+  for (const record of records) totalCents += record.amountCents
+  return totalCents
+}
+
 // 账单范围筛选集中处理日和月两种前缀，并统一返回稳定的时间倒序结果。
 export const filterRecordsByPeriod = (
   records: BillRecord[],

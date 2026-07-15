@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   formatCny,
   filterRecordsByPeriod,
+  summarizeAllTime,
   summarizeMonth,
   summarizeYear
 } from '../shared/billUtils'
@@ -30,6 +31,7 @@ import { ExpenseChart, ExpenseWeeklyChart } from './components/ExpenseChart'
 import { RecordEditor } from './components/RecordEditor'
 import { ResizeHandles } from './components/ResizeHandles'
 import { SettingsDialog } from './components/SettingsDialog'
+import { ToggleStatCard } from './components/ToggleStatCard'
 import { TypeEditorDialog } from './components/TypeEditorDialog'
 import { WindowControls } from './components/WindowControls'
 import { getTaroBillApi } from './previewApi'
@@ -57,6 +59,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [toast, setToast] = useState('')
+  const [showTotalCount, setShowTotalCount] = useState(false)
+  const [showAllTimeExpense, setShowAllTimeExpense] = useState(false)
   const toastTimerRef = useRef<number | undefined>(undefined)
   const isWindows = platform === 'win32'
 
@@ -123,6 +127,7 @@ function App() {
     [activeRecords, selectedMonth, selectedYear]
   )
   const yearSummary = useMemo(() => summarizeYear(activeRecords, selectedYear), [activeRecords, selectedYear])
+  const allTimeTotal = useMemo(() => summarizeAllTime(activeRecords), [activeRecords])
   const visibleRecords = useMemo(
     () => filterRecordsByPeriod(activeRecords, selectedYear, selectedMonth, selectedDate),
     [activeRecords, selectedDate, selectedMonth, selectedYear]
@@ -347,17 +352,27 @@ function App() {
               {/* 三张统计卡统一使用带边框的图标容器，保证信息层级和视觉样式一致。 */}
               <div className="stats-grid">
                 <article className="stat-card">
-                  <span className="stat-icon"><Receipt size={18} /></span>
-                  <div><small>账单数</small><strong>{visibleRecords.length}</strong></div>
-                </article>
-                <article className="stat-card">
                   <span className="stat-icon"><CalendarDays size={18} /></span>
                   <div><small>月支出</small><strong>{formatCny(monthSummary.totalCents)}</strong></div>
                 </article>
-                <article className="stat-card">
-                  <span className="stat-icon"><ChartNoAxesCombined size={18} /></span>
-                  <div><small>年支出</small><strong>{formatCny(yearSummary.totalCents)}</strong></div>
-                </article>
+                <ToggleStatCard
+                  icon={<ChartNoAxesCombined size={18} />}
+                  label="年支出"
+                  altLabel="总支出"
+                  value={formatCny(yearSummary.totalCents)}
+                  altValue={formatCny(allTimeTotal)}
+                  toggled={showAllTimeExpense}
+                  onToggle={() => setShowAllTimeExpense((prev) => !prev)}
+                />
+                <ToggleStatCard
+                  icon={<Receipt size={18} />}
+                  label="账单数"
+                  altLabel="账单总数"
+                  value={String(visibleRecords.length)}
+                  altValue={String(activeRecords.length)}
+                  toggled={showTotalCount}
+                  onToggle={() => setShowTotalCount((prev) => !prev)}
+                />
               </div>
               <div className="charts-row">
                 <ExpenseChart values={monthSummary.dailyTotals} />

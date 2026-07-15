@@ -589,6 +589,34 @@ input:focus-visible {
 
 .stat-card strong { overflow: hidden; font-size: 17px; line-height: 1.15; letter-spacing: -0.02em; text-overflow: ellipsis; white-space: nowrap; }
 
+// 标签行把标签与切换按钮排在同一行，按钮靠右对齐到卡片右上角。
+.stat-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+// 切换按钮保持无边框、透明背景，仅在 hover 或已切换时用更强的文本色提示状态。
+.stat-toggle {
+  display: grid;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.stat-toggle:hover,
+.stat-toggle[aria-pressed='true'] {
+  color: var(--accent);
+}
+
 .panel,
 .records-panel {
   background: var(--card-bg);
@@ -1636,6 +1664,7 @@ input:focus-visible {
   .stat-card { padding: 11px; }
   .stat-icon { width: 32px; height: 32px; }
   .stat-card strong { font-size: 15px; }
+  .stat-toggle { width: 18px; height: 18px; }
   .calendar-cell { min-height: 50px; }
   .toast { left: calc(@compact-sidebar-width + (100% - @compact-sidebar-width) / 2); }
 }
