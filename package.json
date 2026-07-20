@@ -1,7 +1,7 @@
 {
   "name": "tarobill",
   "productName": "TaroBill",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "A lightweight desktop expense tracker for monthly and yearly bills.",
   "author": "Taro",
   "main": "out/main/index.js",
