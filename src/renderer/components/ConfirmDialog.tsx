@@ -1,4 +1,5 @@
 import { X } from 'lucide-react';
+import { useEscapeClose } from './useEscapeClose';
 
 export type ConfirmDialogState = {
   title: string;
@@ -14,6 +15,8 @@ type ConfirmDialogProps = ConfirmDialogState & {
 
 // 所有破坏性动作使用统一确认弹窗，清晰展示具体影响后再执行。
 export function ConfirmDialog({ title, message, confirmLabel, danger, onConfirm, onClose }: ConfirmDialogProps) {
+  useEscapeClose(onClose);
+
   // 先关闭弹窗再执行动作，失败提示由上层 Toast 负责，避免弹窗叠加。
   const handleConfirm = () => {
     onClose();

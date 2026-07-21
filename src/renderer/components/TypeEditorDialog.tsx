@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Tags, X } from 'lucide-react';
+import { useEscapeClose } from './useEscapeClose';
 
 type TypeEditorDialogProps = {
   initialName?: string;
@@ -12,6 +13,7 @@ export function TypeEditorDialog({ initialName = '', onClose, onSave }: TypeEdit
   const [name, setName] = useState(initialName);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  useEscapeClose(onClose);
 
   // Enter 与保存按钮共用提交方法，避免两种入口校验不一致。
   const handleSave = async () => {
@@ -47,7 +49,6 @@ export function TypeEditorDialog({ initialName = '', onClose, onSave }: TypeEdit
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') void handleSave();
-                  if (event.key === 'Escape') onClose();
                 }}
               />
             </span>

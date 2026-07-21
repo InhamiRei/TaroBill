@@ -6,6 +6,7 @@ import { getDefaultBillRecordIcon, isBillRecordIcon } from '../../shared/types';
 import { DateTimePicker } from './DateTimePicker';
 import { getRecordIconLabel, loadRecordIconOptions, recommendedRecordIconOptions, RecordIcon } from './RecordIcon';
 import type { RecordIconOption } from './RecordIcon';
+import { useEscapeClose } from './useEscapeClose';
 
 const ICON_PAGE_SIZE = 64;
 type IconLibrary = 'recommended' | 'all';
@@ -41,6 +42,15 @@ export function RecordEditor({ typeId, typeName, record, onClose, onSave }: Reco
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const selectedIconLabel = getRecordIconLabel(icon);
+
+  // ESC 逐层退出：图标选择面板打开时先关面板，避免误丢已填写的表单内容。
+  useEscapeClose(() => {
+    if (iconPickerOpen) {
+      setIconPickerOpen(false);
+      return;
+    }
+    onClose();
+  });
   const currentIconOptions = iconLibrary === 'recommended' ? recommendedRecordIconOptions : iconOptions;
   const filteredIconOptions = useMemo(() => {
     const query = iconQuery.trim().toLocaleLowerCase();

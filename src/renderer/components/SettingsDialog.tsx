@@ -1,5 +1,6 @@
 import { Download, Moon, Sun, Upload, X } from 'lucide-react';
 import type { ThemeMode } from '../../shared/types';
+import { useEscapeClose } from './useEscapeClose';
 
 type SettingsDialogProps = {
   theme: ThemeMode;
@@ -11,6 +12,8 @@ type SettingsDialogProps = {
 
 // 设置弹窗只保留主题与数据备份，符合第一版轻量边界。
 export function SettingsDialog({ theme, onClose, onThemeChange, onExport, onImport }: SettingsDialogProps) {
+  useEscapeClose(onClose);
+
   return (
     <div className="dialog-backdrop no-drag" role="presentation">
       <section className="dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">

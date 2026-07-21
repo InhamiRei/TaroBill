@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCny, formatOccurredAt, searchRecordsByKeyword } from '../../shared/billUtils';
 import type { BillRecord } from '../../shared/types';
 import { RecordIcon } from './RecordIcon';
+import { useEscapeClose } from './useEscapeClose';
 
 type SearchDialogProps = {
   typeName: string;
@@ -18,6 +19,7 @@ export function SearchDialog({ typeName, records, suspended, onClose, onSelect }
   const inputRef = useRef<HTMLInputElement>(null);
   const trimmedKeyword = keyword.trim();
   const results = useMemo(() => searchRecordsByKeyword(records, keyword), [records, keyword]);
+  useEscapeClose(onClose);
 
   // 上层编辑弹窗关闭后焦点回到搜索框，可以继续输入或直接点下一条结果。
   useEffect(() => {
@@ -45,9 +47,8 @@ export function SearchDialog({ typeName, records, suspended, onClose, onSelect }
                 placeholder="输入账单标题中的文字"
                 onChange={(event) => setKeyword(event.target.value)}
                 onKeyDown={(event) => {
-                  // 中文输入法组词期间的 Enter/Esc 交给输入法处理，避免误触发选中或关闭。
+                  // 中文输入法组词期间的 Enter 交给输入法处理，避免误触发选中；ESC 由全局弹窗栈统一处理。
                   if (event.nativeEvent.isComposing) return;
-                  if (event.key === 'Escape') onClose();
                   // Enter 直达第一条结果，和输入框的实时过滤形成完整键盘流。
                   if (event.key === 'Enter' && results.length) onSelect(results[0]);
                 }}
