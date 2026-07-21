@@ -70,6 +70,9 @@ export const formatCny = (amountCents: number): string => {
   return cnyFormatter.format(amountCents / 100);
 };
 
+// 账单列表和搜索结果统一把本地分钟字符串的分隔符替换为空格展示，不经过 Date 解析，避免时区偏移。
+export const formatOccurredAt = (value: string): string => value.replace('T', ' ');
+
 // 图表和日历空间有限，紧凑金额保留必要小数并用“万”缩写大额数字。
 export const formatCompactCny = (amountCents: number): string => {
   const yuan = amountCents / 100;
@@ -147,6 +150,13 @@ export const summarizeAllTime = (records: BillRecord[]): number => {
 export const filterRecordsByPeriod = (records: BillRecord[], year: number, monthIndex: number, selectedDate: string | null): BillRecord[] => {
   const prefix = selectedDate ?? `${getMonthKey(year, monthIndex)}-`;
   return sortRecordsNewestFirst(records.filter((record) => record.occurredAt.startsWith(prefix)));
+};
+
+// 标题关键词搜索忽略大小写和首尾空白，空关键词不返回任何结果，结果沿用时间倒序。
+export const searchRecordsByKeyword = (records: BillRecord[], keyword: string): BillRecord[] => {
+  const normalized = keyword.trim().toLowerCase();
+  if (!normalized) return [];
+  return sortRecordsNewestFirst(records.filter((record) => record.content.toLowerCase().includes(normalized)));
 };
 
 // 可见记录统一按发生时间倒序，时间相同时再用创建时间保证顺序稳定。

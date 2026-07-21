@@ -1,5 +1,5 @@
 import { Pencil, Plus, ReceiptText, Trash2 } from 'lucide-react';
-import { formatCny } from '../../shared/billUtils';
+import { formatCny, formatOccurredAt } from '../../shared/billUtils';
 import type { BillRecord } from '../../shared/types';
 import { RecordIcon } from './RecordIcon';
 
@@ -9,9 +9,6 @@ type BillListProps = {
   onEdit: (record: BillRecord) => void;
   onDelete: (record: BillRecord) => void;
 };
-
-// 本地分钟字符串只替换分隔符展示，不经过 Date 解析，避免时区偏移。
-const formatOccurredAt = (value: string): string => value.replace('T', ' ');
 
 // 右侧账单列表只负责展示和派发操作，实际写入由 App 调用 preload 完成。
 export function BillList({ records, onAdd, onEdit, onDelete }: BillListProps) {

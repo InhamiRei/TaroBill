@@ -5,6 +5,7 @@ import {
   formatLocalDateTime,
   isValidLocalDateTime,
   parseAmountToCents,
+  searchRecordsByKeyword,
   summarizeAllTime,
   summarizeMonth,
   summarizeYear,
@@ -83,5 +84,24 @@ describe('支出聚合', () => {
   it('按日期和月份筛选并保持发生时间倒序', () => {
     expect(filterRecordsByPeriod(records, 2026, 6, '2026-07-01').map((record) => record.id)).toEqual(['b', 'a']);
     expect(filterRecordsByPeriod(records, 2026, 6, null).map((record) => record.id)).toEqual(['c', 'b', 'a']);
+  });
+});
+
+describe('标题搜索', () => {
+  const records = [
+    { ...createRecord('2026-07-01T10:25', 3500, 'a'), content: 'ChatGPT 订阅' },
+    { ...createRecord('2026-07-02T12:00', 4990, 'b'), content: 'Claude 订阅' },
+    { ...createRecord('2026-08-01T09:00', 2000, 'c'), content: 'chatgpt 充值' },
+  ];
+
+  it('忽略大小写和首尾空白匹配标题，结果保持时间倒序', () => {
+    expect(searchRecordsByKeyword(records, '  CHATGPT ').map((record) => record.id)).toEqual(['c', 'a']);
+    expect(searchRecordsByKeyword(records, '订阅').map((record) => record.id)).toEqual(['b', 'a']);
+  });
+
+  it('空白关键词不返回结果，也不匹配金额等其他字段', () => {
+    expect(searchRecordsByKeyword(records, '')).toEqual([]);
+    expect(searchRecordsByKeyword(records, '   ')).toEqual([]);
+    expect(searchRecordsByKeyword(records, '35')).toEqual([]);
   });
 });

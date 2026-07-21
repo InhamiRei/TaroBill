@@ -9,6 +9,7 @@ import {
   Plus,
   Receipt,
   ReceiptText,
+  Search,
   Settings,
   Tag,
   Trash2,
@@ -24,6 +25,7 @@ import type { ConfirmDialogState } from './components/ConfirmDialog';
 import { ExpenseChart, ExpenseWeeklyChart } from './components/ExpenseChart';
 import { RecordEditor } from './components/RecordEditor';
 import { ResizeHandles } from './components/ResizeHandles';
+import { SearchDialog } from './components/SearchDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { ToggleStatCard } from './components/ToggleStatCard';
 import { TypeEditorDialog } from './components/TypeEditorDialog';
@@ -51,6 +53,7 @@ function App() {
   const [recordEditor, setRecordEditor] = useState<BillRecord | null | undefined>(undefined);
   const [typeEditor, setTypeEditor] = useState<BillType | null | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [toast, setToast] = useState('');
   const [showTotalCount, setShowTotalCount] = useState(false);
@@ -354,6 +357,9 @@ function App() {
           <header className="topbar">
             <div className="page-title">
               <h1>{activeType.name}</h1>
+              <button className="icon-button page-search" title="搜索账单标题" onClick={() => setSearchOpen(true)}>
+                <Search size={16} />
+              </button>
             </div>
             <div className="topbar-actions no-drag">
               <div className="period-navigator">
@@ -427,6 +433,16 @@ function App() {
           </div>
         </section>
 
+        {/* 搜索弹窗在编辑弹窗之前渲染，点击结果后编辑弹窗叠在上层，关闭后回到原搜索结果。 */}
+        {searchOpen && (
+          <SearchDialog
+            typeName={activeType.name}
+            records={activeRecords}
+            suspended={recordEditor !== undefined}
+            onClose={() => setSearchOpen(false)}
+            onSelect={(record) => setRecordEditor(record)}
+          />
+        )}
         {recordEditor !== undefined && (
           <RecordEditor
             key={recordEditor?.id ?? `new-${activeType.id}`}
