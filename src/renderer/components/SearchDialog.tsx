@@ -1,4 +1,4 @@
-import { Search, SearchX, X } from 'lucide-react';
+import { Bot, Search, SearchX, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCny, formatOccurredAt, searchRecordsByKeyword } from '../../shared/billUtils';
 import type { BillRecord } from '../../shared/types';
@@ -16,9 +16,10 @@ type SearchDialogProps = {
 // 标题关键词搜索只读当前类型的全部记录并实时过滤；点击结果后弹窗保持打开，编辑弹窗叠在上层。
 export function SearchDialog({ typeName, records, suspended, onClose, onSelect }: SearchDialogProps) {
   const [keyword, setKeyword] = useState('');
+  const [autoOnly, setAutoOnly] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const trimmedKeyword = keyword.trim();
-  const results = useMemo(() => searchRecordsByKeyword(records, keyword), [records, keyword]);
+  const results = useMemo(() => searchRecordsByKeyword(records, keyword, autoOnly), [records, keyword, autoOnly]);
   useEscapeClose(onClose);
 
   // 上层编辑弹窗关闭后焦点回到搜索框，可以继续输入或直接点下一条结果。
@@ -55,6 +56,17 @@ export function SearchDialog({ typeName, records, suspended, onClose, onSelect }
               />
             </span>
           </label>
+          <div className="search-filters">
+            <button
+              type="button"
+              className={autoOnly ? 'search-filter-chip active' : 'search-filter-chip'}
+              aria-pressed={autoOnly}
+              onClick={() => setAutoOnly((current) => !current)}
+            >
+              <Bot size={13} />
+              只看自动记账
+            </button>
+          </div>
           <div className="search-results">
             {results.map((record) => (
               <button className="record-card search-result" key={record.id} title="编辑这笔账单" onClick={() => onSelect(record)}>
@@ -62,7 +74,15 @@ export function SearchDialog({ typeName, records, suspended, onClose, onSelect }
                   <RecordIcon name={record.icon} typeId={record.typeId} />
                 </div>
                 <div className="record-main">
-                  <strong>{record.content}</strong>
+                  <div className="record-title-row">
+                    <strong>{record.content}</strong>
+                    {record.ruleId && (
+                      <span className="record-auto-badge" title="由周期任务自动记账">
+                        <Bot size={10} />
+                        自动
+                      </span>
+                    )}
+                  </div>
                   <time dateTime={record.occurredAt}>{formatOccurredAt(record.occurredAt)}</time>
                 </div>
                 <div className="record-side">
@@ -70,13 +90,17 @@ export function SearchDialog({ typeName, records, suspended, onClose, onSelect }
                 </div>
               </button>
             ))}
-            {trimmedKeyword && !results.length && (
+            {(trimmedKeyword || autoOnly) && !results.length && (
               <div className="search-empty">
                 <SearchX size={20} />
-                <span>没有找到标题包含“{trimmedKeyword}”的账单</span>
+                <span>
+                  {autoOnly && !trimmedKeyword
+                    ? '该类型下还没有自动记账的账单'
+                    : `没有找到标题包含“${trimmedKeyword}”的${autoOnly ? '自动' : ''}账单`}
+                </span>
               </div>
             )}
-            {!trimmedKeyword && <div className="search-empty">输入关键词，实时搜索该类型下的全部账单。</div>}
+            {!trimmedKeyword && !autoOnly && <div className="search-empty">输入关键词，实时搜索该类型下的全部账单。</div>}
           </div>
         </div>
       </section>

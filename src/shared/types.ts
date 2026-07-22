@@ -26,6 +26,32 @@ export type BillRecord = {
   content: string;
   amountCents: number;
   occurredAt: string;
+  // 由周期任务生成的账单带任务 ID，用于列表徽标和搜索筛选；手动账单没有该字段。
+  ruleId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
+
+export type RecurringRule = {
+  id: string;
+  // 任务名称用于面板展示和辨识；content 是生成账单时写入的账单标题，两者独立。
+  name: string;
+  typeId: string;
+  icon: BillRecordIcon;
+  content: string;
+  amountCents: number;
+  frequency: RecurringFrequency;
+  // 本地触发时间 "HH:mm"，与账单的本地分钟字符串保持一致，不涉及时区。
+  timeOfDay: string;
+  // 0-6（周日=0，与 Date.getDay 一致），仅每周任务使用。
+  weekday?: number;
+  // 1-31，仅每月任务使用；小月落到月末最后一天。
+  monthDay?: number;
+  enabled: boolean;
+  // 已生成到的本地日期 "YYYY-MM-DD"，空字符串表示从未生成；生成过的周期不会重复记账。
+  lastGeneratedDate: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -46,6 +72,7 @@ export type AppData = {
   schemaVersion: 1;
   billTypes: BillType[];
   records: BillRecord[];
+  recurringRules: RecurringRule[];
   settings: AppSettings;
 };
 
@@ -54,6 +81,11 @@ export const WINDOW_MIN_WIDTH = 1100;
 export const WINDOW_MIN_HEIGHT = 768;
 
 export type BillRecordInput = Pick<BillRecord, 'content' | 'amountCents' | 'occurredAt' | 'typeId' | 'icon'>;
+
+export type RecurringRuleInput = Pick<
+  RecurringRule,
+  'name' | 'typeId' | 'icon' | 'content' | 'amountCents' | 'frequency' | 'timeOfDay' | 'weekday' | 'monthDay' | 'enabled'
+>;
 
 export type DialogResult = {
   canceled: boolean;
@@ -87,6 +119,11 @@ export type TaroBillApi = {
   createBillRecord: (input: BillRecordInput) => Promise<AppData>;
   updateBillRecord: (recordId: string, input: BillRecordInput) => Promise<AppData>;
   deleteBillRecord: (recordId: string) => Promise<AppData>;
+  createRecurringRule: (input: RecurringRuleInput) => Promise<AppData>;
+  updateRecurringRule: (ruleId: string, input: RecurringRuleInput) => Promise<AppData>;
+  deleteRecurringRule: (ruleId: string) => Promise<AppData>;
+  // 周期任务在主进程定时生成账单后推送完整数据，渲染层据此实时刷新。
+  onDataChanged: (callback: (data: AppData) => void) => () => void;
   updateSettings: (settings: Pick<AppSettings, 'theme'>) => Promise<AppData>;
   exportData: () => Promise<DialogResult>;
   importData: () => Promise<ImportResult>;
@@ -129,6 +166,7 @@ export const createDefaultAppData = (): AppData => ({
   schemaVersion: 1,
   billTypes: DEFAULT_BILL_TYPES.map((billType) => ({ ...billType })),
   records: [],
+  recurringRules: [],
   settings: {
     ...DEFAULT_SETTINGS,
     window: { ...DEFAULT_SETTINGS.window },

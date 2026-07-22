@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { TaroBillApi, WindowState } from '../shared/types';
+import type { AppData, TaroBillApi, WindowState } from '../shared/types';
 
 // preload 只负责把命名清晰的 IPC 白名单桥接给渲染进程。
 const api: TaroBillApi = {
@@ -10,6 +10,14 @@ const api: TaroBillApi = {
   createBillRecord: (input) => ipcRenderer.invoke('records:create', input),
   updateBillRecord: (recordId, input) => ipcRenderer.invoke('records:update', recordId, input),
   deleteBillRecord: (recordId) => ipcRenderer.invoke('records:delete', recordId),
+  createRecurringRule: (input) => ipcRenderer.invoke('recurring:create', input),
+  updateRecurringRule: (ruleId, input) => ipcRenderer.invoke('recurring:update', ruleId, input),
+  deleteRecurringRule: (ruleId) => ipcRenderer.invoke('recurring:delete', ruleId),
+  onDataChanged: (callback) => {
+    const listener = (_event: unknown, data: AppData) => callback(data);
+    ipcRenderer.on('data:changed', listener);
+    return () => ipcRenderer.removeListener('data:changed', listener);
+  },
   updateSettings: (settings) => ipcRenderer.invoke('settings:update', settings),
   exportData: () => ipcRenderer.invoke('dialog:export'),
   importData: () => ipcRenderer.invoke('dialog:import'),

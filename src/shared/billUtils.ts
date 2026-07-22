@@ -65,6 +65,14 @@ export const parseAmountToCents = (value: string): number | null => {
   return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
 };
 
+// 编辑表单把整数分还原成不带多余零的输入文本，与 parseAmountToCents 正好互逆。
+export const formatAmountForInput = (amountCents: number): string => {
+  return (amountCents / 100)
+    .toFixed(2)
+    .replace(/\.00$/, '')
+    .replace(/(\.\d)0$/, '$1');
+};
+
 // 人民币显示统一走 Intl，自动处理千分位与两位小数。
 export const formatCny = (amountCents: number): string => {
   return cnyFormatter.format(amountCents / 100);
@@ -152,11 +160,16 @@ export const filterRecordsByPeriod = (records: BillRecord[], year: number, month
   return sortRecordsNewestFirst(records.filter((record) => record.occurredAt.startsWith(prefix)));
 };
 
-// 标题关键词搜索忽略大小写和首尾空白，空关键词不返回任何结果，结果沿用时间倒序。
-export const searchRecordsByKeyword = (records: BillRecord[], keyword: string): BillRecord[] => {
+// 标题关键词搜索忽略大小写和首尾空白；勾选只看自动记账时过滤掉手动账单，
+// 此时空关键词直接列出全部自动账单，让筛选器可以脱离关键词独立使用。
+export const searchRecordsByKeyword = (records: BillRecord[], keyword: string, autoOnly = false): BillRecord[] => {
   const normalized = keyword.trim().toLowerCase();
-  if (!normalized) return [];
-  return sortRecordsNewestFirst(records.filter((record) => record.content.toLowerCase().includes(normalized)));
+  if (!normalized && !autoOnly) return [];
+  const filtered = records.filter((record) => {
+    if (autoOnly && !record.ruleId) return false;
+    return !normalized || record.content.toLowerCase().includes(normalized);
+  });
+  return sortRecordsNewestFirst(filtered);
 };
 
 // 可见记录统一按发生时间倒序，时间相同时再用创建时间保证顺序稳定。

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '../shared/types';
-import type { AppSettings, BillRecordInput, ResizeEdges } from '../shared/types';
+import type { AppSettings, BillRecordInput, RecurringRuleInput, ResizeEdges } from '../shared/types';
 import { getDataPath, TaroBillStore } from './store';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -138,6 +138,9 @@ const registerIpcHandlers = () => {
   ipcMain.handle('records:create', (_event, input: BillRecordInput) => store.createBillRecord(input));
   ipcMain.handle('records:update', (_event, recordId: string, input: BillRecordInput) => store.updateBillRecord(recordId, input));
   ipcMain.handle('records:delete', (_event, recordId: string) => store.deleteBillRecord(recordId));
+  ipcMain.handle('recurring:create', (_event, input: RecurringRuleInput) => store.createRecurringRule(input));
+  ipcMain.handle('recurring:update', (_event, ruleId: string, input: RecurringRuleInput) => store.updateRecurringRule(ruleId, input));
+  ipcMain.handle('recurring:delete', (_event, ruleId: string) => store.deleteRecurringRule(ruleId));
   ipcMain.handle('settings:update', (_event, settings: Pick<AppSettings, 'theme'>) => {
     const data = store.updateTheme(settings.theme);
     applyRuntimeTheme(data.settings.theme);
@@ -167,7 +170,9 @@ const registerIpcHandlers = () => {
     try {
       const data = store.importFrom(result.filePaths[0]);
       applyRuntimeTheme(data.settings.theme);
-      return { data, result: { canceled: false, filePath: result.filePaths[0] } };
+      // 导入的备份可能带有周期任务，立即补账而不是等待下一分钟的定时检查。
+      const withGenerated = store.applyRecurringRules(new Date()) ?? data;
+      return { data: withGenerated, result: { canceled: false, filePath: result.filePaths[0] } };
     } catch (error) {
       return {
         result: {
@@ -203,6 +208,27 @@ const registerIpcHandlers = () => {
   });
 };
 
+// 周期任务由主进程统一调度：启动时先把关闭期间错过的账单补齐，之后对齐每分钟整点检查一次。
+// 递归 setTimeout 对齐到整分钟后 0.5 秒，保证设定分钟一到就生成，而不是像 setInterval 那样随机相位最多晚一分钟。
+// 窗口未聚焦甚至最小化时也能按时记账；实际生成后推送完整数据让渲染层实时刷新。
+const runRecurringRules = () => {
+  if (!store) return;
+  const next = store.applyRecurringRules(new Date());
+  if (next && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('data:changed', next);
+};
+
+const startRecurringScheduler = () => {
+  runRecurringRules();
+  const scheduleNext = () => {
+    const delay = 60_000 - (Date.now() % 60_000) + 500;
+    setTimeout(() => {
+      runRecurringRules();
+      scheduleNext();
+    }, delay);
+  };
+  scheduleNext();
+};
+
 app.whenReady().then(() => {
   app.setAboutPanelOptions({
     applicationName: APP_NAME,
@@ -214,6 +240,7 @@ app.whenReady().then(() => {
   store = new TaroBillStore(getDataPath(app.getPath('userData')));
   registerIpcHandlers();
   createMainWindow();
+  startRecurringScheduler();
 });
 
 // 普通桌面应用关闭最后一个窗口即退出，macOS 也不保留后台进程。

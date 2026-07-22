@@ -5,3 +5,4 @@ coverage/
 .pet-runs/
 .DS_Store
 *.log
+.zcode/

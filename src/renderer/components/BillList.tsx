@@ -1,4 +1,4 @@
-import { Pencil, Plus, ReceiptText, Trash2 } from 'lucide-react';
+import { Bot, Pencil, Plus, ReceiptText, Trash2 } from 'lucide-react';
 import { formatCny, formatOccurredAt } from '../../shared/billUtils';
 import type { BillRecord } from '../../shared/types';
 import { RecordIcon } from './RecordIcon';
@@ -27,7 +27,15 @@ export function BillList({ records, onAdd, onEdit, onDelete }: BillListProps) {
               <RecordIcon name={record.icon} typeId={record.typeId} />
             </div>
             <div className="record-main">
-              <strong>{record.content}</strong>
+              <div className="record-title-row">
+                <strong>{record.content}</strong>
+                {record.ruleId && (
+                  <span className="record-auto-badge" title="由周期任务自动记账">
+                    <Bot size={10} />
+                    自动
+                  </span>
+                )}
+              </div>
               <time dateTime={record.occurredAt}>{formatOccurredAt(record.occurredAt)}</time>
             </div>
             <div className="record-side">

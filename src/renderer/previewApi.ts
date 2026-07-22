@@ -1,4 +1,5 @@
-import type { AppData, AppSettings, BillRecordInput, TaroBillApi } from '../shared/types';
+import { applyRecurringRulesToData, getLocalDateKey, isValidTimeOfDay } from '../shared/recurringUtils';
+import type { AppData, AppSettings, BillRecordInput, RecurringRuleInput, TaroBillApi } from '../shared/types';
 import { createDefaultAppData } from '../shared/types';
 
 const previewKey = 'tarobill-preview-data-v1';
@@ -35,9 +36,55 @@ const validateTypeName = (data: AppData, name: string, excludedId?: string): str
   return normalized;
 };
 
+// 任务校验复刻主进程的关键约束，浏览器调试时尽早暴露同样的错误文案。
+const validateRuleInput = (data: AppData, input: RecurringRuleInput): RecurringRuleInput => {
+  const name = input.name.trim();
+  if (!name) throw new Error('任务名称不能为空。');
+  const content = input.content.trim();
+  if (!content) throw new Error('账单标题不能为空。');
+  if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error('账单金额无效。');
+  if (!data.billTypes.some((item) => item.id === input.typeId)) throw new Error('账单类型不存在。');
+  if (!isValidTimeOfDay(input.timeOfDay)) throw new Error('执行时间无效。');
+  if (input.frequency === 'weekly' && (input.weekday === undefined || input.weekday < 0 || input.weekday > 6))
+    throw new Error('每周任务需要选择星期。');
+  if (input.frequency === 'monthly' && (input.monthDay === undefined || input.monthDay < 1 || input.monthDay > 31))
+    throw new Error('每月任务需要选择日期。');
+  return {
+    ...input,
+    name,
+    content,
+    weekday: input.frequency === 'weekly' ? input.weekday : undefined,
+    monthDay: input.frequency === 'monthly' ? input.monthDay : undefined,
+  };
+};
+
+// 预览环境复用共享补账逻辑：读取时顺带补账，每分钟再检查一次并通知订阅者。
+const dataChangedListeners = new Set<(data: AppData) => void>();
+
+const runPreviewRules = (): AppData => {
+  // 只解析一次 localStorage：无到期账单直接返回，有生成才写回并通知订阅者。
+  const data = readData();
+  const next = applyRecurringRulesToData(data, new Date());
+  if (!next) return data;
+  const written = writeData(next);
+  for (const listener of dataChangedListeners) listener(written);
+  return written;
+};
+
+let previewSchedulerStarted = false;
+
+const ensurePreviewScheduler = () => {
+  if (previewSchedulerStarted) return;
+  previewSchedulerStarted = true;
+  window.setInterval(runPreviewRules, 60_000);
+};
+
 // 开发预览 API 复刻业务动作，但不触碰文件系统和原生窗口。
 const createPreviewApi = (): TaroBillApi => ({
-  getState: async () => writeData(readData()),
+  getState: async () => {
+    ensurePreviewScheduler();
+    return runPreviewRules();
+  },
   createBillType: async (name) => {
     const data = readData();
     const normalized = validateTypeName(data, name);
@@ -64,6 +111,7 @@ const createPreviewApi = (): TaroBillApi => ({
       ...data,
       billTypes: data.billTypes.filter((item) => item.id !== typeId).map((item, index) => ({ ...item, sortOrder: index })),
       records: data.records.filter((record) => record.typeId !== typeId),
+      recurringRules: data.recurringRules.filter((rule) => rule.typeId !== typeId),
     });
   },
   createBillRecord: async (input: BillRecordInput) => {
@@ -86,6 +134,41 @@ const createPreviewApi = (): TaroBillApi => ({
   deleteBillRecord: async (recordId) => {
     const data = readData();
     return writeData({ ...data, records: data.records.filter((record) => record.id !== recordId) });
+  },
+  createRecurringRule: async (input) => {
+    const data = readData();
+    const validated = validateRuleInput(data, input);
+    const timestamp = new Date().toISOString();
+    return writeData({
+      ...data,
+      recurringRules: [
+        ...data.recurringRules,
+        { id: crypto.randomUUID(), ...validated, lastGeneratedDate: '', createdAt: timestamp, updatedAt: timestamp },
+      ],
+    });
+  },
+  updateRecurringRule: async (ruleId, input) => {
+    const data = readData();
+    const previous = data.recurringRules.find((rule) => rule.id === ruleId);
+    if (!previous) throw new Error('周期任务不存在。');
+    const validated = validateRuleInput(data, input);
+    // 与主进程一致：停用时推进生成进度到当天，重新启用不补停用期间的账单。
+    const lastGeneratedDate = previous.enabled && !validated.enabled ? getLocalDateKey(new Date()) : previous.lastGeneratedDate;
+    return writeData({
+      ...data,
+      recurringRules: data.recurringRules.map((rule) =>
+        rule.id === ruleId ? { ...rule, ...validated, lastGeneratedDate, updatedAt: new Date().toISOString() } : rule,
+      ),
+    });
+  },
+  deleteRecurringRule: async (ruleId) => {
+    const data = readData();
+    if (!data.recurringRules.some((rule) => rule.id === ruleId)) throw new Error('周期任务不存在。');
+    return writeData({ ...data, recurringRules: data.recurringRules.filter((rule) => rule.id !== ruleId) });
+  },
+  onDataChanged: (callback) => {
+    dataChangedListeners.add(callback);
+    return () => dataChangedListeners.delete(callback);
   },
   updateSettings: async (settings: Pick<AppSettings, 'theme'>) => {
     const data = readData();

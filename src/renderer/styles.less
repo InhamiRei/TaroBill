@@ -383,6 +383,51 @@ input:focus-visible {
   margin-top: auto;
 }
 
+.sidebar-recurring {
+  margin: 0 0 6px;
+}
+
+// 自动记账入口与设置项共用三列栅格，计数徽标沿用类型行的右侧数字风格。
+.recurring-entry {
+  display: grid;
+  width: calc(100% + 16px);
+  height: 40px;
+  grid-template-columns: @sidebar-icon-column minmax(0, 1fr) @sidebar-count-column;
+  align-items: center;
+  column-gap: @sidebar-column-gap;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+}
+
+.recurring-entry svg {
+  grid-column: 1;
+}
+.recurring-entry span {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recurring-entry em {
+  grid-column: 3;
+  justify-self: center;
+  width: 100%;
+  color: var(--soft);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 650;
+  text-align: center;
+}
+.recurring-entry:hover,
+.recurring-entry.active {
+  background: var(--selected-bg);
+}
+
 .sidebar-settings {
   display: grid;
   width: calc(100% + 16px);
@@ -1032,6 +1077,33 @@ input:focus-visible {
   gap: 5px;
 }
 
+// 标题行容纳「自动」徽标，标题本身继续保持单行省略。
+.record-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.record-title-row strong {
+  min-width: 0;
+}
+
+// 自动记账徽标沿用版本号胶囊样式，一眼可分辨但不抢眼。
+.record-auto-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  color: var(--muted);
+  background: var(--hover-bg);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
 .record-main strong {
   overflow: hidden;
   font-size: 13px;
@@ -1141,6 +1213,153 @@ input:focus-visible {
   border-top: 1px solid var(--line);
   font-size: 10px;
   text-align: right;
+}
+
+// 周期任务面板占满整个工作区，顶栏沿用账单页样式保证切换时视觉不跳动。
+.recurring-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.recurring-add-button {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.recurring-scroll {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 16px 22px;
+  scrollbar-width: none;
+}
+
+.recurring-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.rule-card {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  box-shadow: var(--panel-shadow);
+}
+
+// 停用任务只淡化图标和文字区域，右侧开关与操作按钮保持正常可点。
+.rule-card.disabled .rule-icon,
+.rule-card.disabled .rule-main {
+  opacity: 0.45;
+}
+
+.rule-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.rule-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rule-main strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 下次触发和停用状态内联在元信息行里，用更弱的颜色区分层级。
+.rule-meta em {
+  color: var(--soft);
+  font-style: normal;
+}
+
+.rule-side {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+
+// 启停开关做成滑动胶囊，accent 色表达开启，和主题按钮保持同色系。
+.rule-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex: 0 0 auto;
+  background: var(--selected-bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.rule-switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+  transition: transform 140ms ease;
+}
+
+.rule-switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.rule-switch.on i {
+  transform: translateX(16px);
+}
+
+// 编辑和删除按钮常驻显示，开关旁边不再需要悬停猜测入口。
+.rule-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.rule-actions button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  color: var(--muted);
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.rule-actions button:hover {
+  color: var(--text);
 }
 
 .dialog-backdrop {
@@ -1259,6 +1478,95 @@ input:focus-visible {
   border: 0;
   outline: 0;
   font-size: 14px;
+}
+
+// 自定义下拉与图标选择器共用触发按钮和弹层语言，替代原生 select。
+.field-select {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.field-select-trigger {
+  width: 100%;
+  grid-template-columns: 24px minmax(0, 1fr) 20px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.field-select-trigger strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 520;
+}
+
+.field-select.open .field-select-trigger {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.field-select.open .record-icon-chevron {
+  transform: rotate(180deg);
+}
+
+.field-select-popup {
+  display: flex;
+  max-height: 216px;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--app-bg);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  box-shadow: var(--panel-shadow);
+}
+
+.field-select-option {
+  display: grid;
+  min-height: 34px;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--muted);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+}
+
+.field-select-option > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-select-option:hover {
+  color: var(--text);
+  background: var(--hover-bg);
+}
+
+.field-select-option.selected {
+  color: var(--text);
+  background: var(--selected-bg);
+}
+
+// 频率分段选择复用图标库的胶囊页签样式，只在间距上微调。
+.frequency-field {
+  cursor: default;
+}
+
+.frequency-tabs {
+  align-self: flex-start;
+}
+
+.frequency-tabs button {
+  min-height: 27px;
+  padding: 0 14px;
+  font-size: 11px;
 }
 
 .field-row:focus-within {
@@ -1701,6 +2009,38 @@ input:focus-visible {
 
 .search-dialog .dialog-body {
   min-height: 0;
+}
+
+// 搜索筛选 chips 放在关键词输入框下方，激活态用 accent 实心胶囊。
+.search-filters {
+  display: flex;
+  gap: 8px;
+}
+
+.search-filter-chip {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: var(--app-bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.search-filter-chip:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.search-filter-chip.active {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .search-results {

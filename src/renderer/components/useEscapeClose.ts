@@ -43,3 +43,15 @@ export function useEscapeClose(onEscape: () => void) {
     return escapeStack.push({ onEscape: () => onEscapeRef.current() });
   }, []);
 }
+
+// 条件入栈的 ESC 层：只在 active 时压入栈顶。下拉面板展开时注册，ESC 先关面板再轮到底层弹窗。
+export function useEscapeCloseLayer(active: boolean, onEscape: () => void) {
+  const onEscapeRef = useRef(onEscape);
+  onEscapeRef.current = onEscape;
+
+  useEffect(() => {
+    if (!active) return;
+    ensureEscapeListener();
+    return escapeStack.push({ onEscape: () => onEscapeRef.current() });
+  }, [active]);
+}

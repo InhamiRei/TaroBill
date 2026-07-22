@@ -2,7 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { isValidLocalDateTime } from '../shared/billUtils';
-import type { AppData, AppSettings, BillRecord, BillRecordInput, BillType, WindowBounds } from '../shared/types';
+import { applyRecurringRulesToData, getLocalDateKey, isValidDateKey, isValidTimeOfDay } from '../shared/recurringUtils';
+import type {
+  AppData,
+  AppSettings,
+  BillRecord,
+  BillRecordInput,
+  BillType,
+  RecurringFrequency,
+  RecurringRule,
+  RecurringRuleInput,
+  WindowBounds,
+} from '../shared/types';
 import {
   DEFAULT_SETTINGS,
   WINDOW_MIN_HEIGHT,
@@ -119,12 +130,72 @@ const normalizeBillRecords = (value: unknown, billTypes: BillType[]): BillRecord
       content: rawRecord.content.trim(),
       amountCents: Number(rawRecord.amountCents),
       occurredAt: rawRecord.occurredAt,
+      // 自动记账标识是可选字段，旧备份和手动账单没有它，只放行非空字符串。
+      ...(isString(rawRecord.ruleId) && rawRecord.ruleId.trim() ? { ruleId: rawRecord.ruleId } : {}),
       createdAt,
       updatedAt: isString(rawRecord.updatedAt) ? rawRecord.updatedAt : createdAt,
     });
   }
 
   return records;
+};
+
+const RECURRING_FREQUENCIES = new Set<RecurringFrequency>(['daily', 'weekly', 'monthly']);
+
+// 周期任务只保留归属现有类型、频率和时间均合法的项目；频率要求的星期或日期缺失时整条丢弃。
+const normalizeRecurringRules = (value: unknown, billTypes: BillType[]): RecurringRule[] => {
+  if (!Array.isArray(value)) return [];
+
+  const typeIds = new Set(billTypes.map((billType) => billType.id));
+  const ids = new Set<string>();
+  const rules: RecurringRule[] = [];
+
+  for (const rawRule of value) {
+    if (!isRecord(rawRule)) continue;
+    if (!isString(rawRule.typeId) || !typeIds.has(rawRule.typeId)) continue;
+    if (!isString(rawRule.content) || !rawRule.content.trim()) continue;
+    if (!Number.isSafeInteger(rawRule.amountCents) || Number(rawRule.amountCents) <= 0) continue;
+    if (!isString(rawRule.frequency) || !RECURRING_FREQUENCIES.has(rawRule.frequency as RecurringFrequency)) continue;
+    if (!isString(rawRule.timeOfDay) || !isValidTimeOfDay(rawRule.timeOfDay)) continue;
+
+    const frequency = rawRule.frequency as RecurringFrequency;
+    const weekday =
+      typeof rawRule.weekday === 'number' && Number.isInteger(rawRule.weekday) && rawRule.weekday >= 0 && rawRule.weekday <= 6
+        ? rawRule.weekday
+        : undefined;
+    const monthDay =
+      typeof rawRule.monthDay === 'number' && Number.isInteger(rawRule.monthDay) && rawRule.monthDay >= 1 && rawRule.monthDay <= 31
+        ? rawRule.monthDay
+        : undefined;
+    if (frequency === 'weekly' && weekday === undefined) continue;
+    if (frequency === 'monthly' && monthDay === undefined) continue;
+
+    let id = isString(rawRule.id) && rawRule.id.trim() ? rawRule.id.trim() : randomUUID();
+    if (ids.has(id)) id = randomUUID();
+    ids.add(id);
+    const createdAt = isString(rawRule.createdAt) ? rawRule.createdAt : nowIso();
+    const content = rawRule.content.trim();
+
+    rules.push({
+      id,
+      // 早期数据没有任务名称，回退用账单标题充当场外展示名。
+      name: isString(rawRule.name) && rawRule.name.trim() ? rawRule.name.trim() : content,
+      typeId: rawRule.typeId,
+      icon: isBillRecordIcon(rawRule.icon) ? rawRule.icon : getDefaultBillRecordIcon(rawRule.typeId),
+      content,
+      amountCents: Number(rawRule.amountCents),
+      frequency,
+      timeOfDay: rawRule.timeOfDay,
+      weekday: frequency === 'weekly' ? weekday : undefined,
+      monthDay: frequency === 'monthly' ? monthDay : undefined,
+      enabled: rawRule.enabled !== false,
+      lastGeneratedDate: isString(rawRule.lastGeneratedDate) && isValidDateKey(rawRule.lastGeneratedDate) ? rawRule.lastGeneratedDate : '',
+      createdAt,
+      updatedAt: isString(rawRule.updatedAt) ? rawRule.updatedAt : createdAt,
+    });
+  }
+
+  return rules;
 };
 
 // 所有读取和导入入口都汇总到同一个规范化函数，避免运行时出现两套数据规则。
@@ -143,6 +214,8 @@ export const normalizeData = (value: unknown, strict = false): AppData => {
     schemaVersion: 1,
     billTypes,
     records: normalizeBillRecords(value.records, billTypes),
+    // 旧备份没有周期任务字段，缺失时按空列表处理，保持向后兼容。
+    recurringRules: normalizeRecurringRules(value.recurringRules, billTypes),
     settings: normalizeSettings(value.settings),
   };
 };
@@ -212,6 +285,33 @@ export class TaroBillStore {
     return { ...input, content };
   }
 
+  // 周期任务校验与账单同样严格；与频率无关的星期或日期字段统一清空，避免遗留矛盾数据。
+  private validateRuleInput(input: RecurringRuleInput): RecurringRuleInput {
+    const name = input.name.trim();
+    if (!name) throw new Error('任务名称不能为空。');
+    const content = input.content.trim();
+    if (!content) throw new Error('账单标题不能为空。');
+    if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error('账单金额无效。');
+    if (!isBillRecordIcon(input.icon)) throw new Error('账单图标无效。');
+    if (!this.data.billTypes.some((billType) => billType.id === input.typeId)) throw new Error('账单类型不存在。');
+    if (!RECURRING_FREQUENCIES.has(input.frequency)) throw new Error('周期频率无效。');
+    if (!isValidTimeOfDay(input.timeOfDay)) throw new Error('执行时间无效。');
+    if (input.frequency === 'weekly' && (input.weekday === undefined || !Number.isInteger(input.weekday) || input.weekday < 0 || input.weekday > 6))
+      throw new Error('每周任务需要选择星期。');
+    if (
+      input.frequency === 'monthly' &&
+      (input.monthDay === undefined || !Number.isInteger(input.monthDay) || input.monthDay < 1 || input.monthDay > 31)
+    )
+      throw new Error('每月任务需要选择日期。');
+    return {
+      ...input,
+      name,
+      content,
+      weekday: input.frequency === 'weekly' ? input.weekday : undefined,
+      monthDay: input.frequency === 'monthly' ? input.monthDay : undefined,
+    };
+  }
+
   // 返回深拷贝，避免 preload 返回值间接污染缓存。
   get(): AppData {
     return structuredClone(this.data);
@@ -244,7 +344,7 @@ export class TaroBillStore {
     });
   }
 
-  // 删除类型会级联删除其账单；最后一个类型不可删除，保证新建账单始终有归属。
+  // 删除类型会级联删除其账单和周期任务；最后一个类型不可删除，保证新建账单始终有归属。
   deleteBillType(typeId: string): AppData {
     if (this.data.billTypes.length <= 1) throw new Error('至少需要保留一个账单类型。');
     if (!this.data.billTypes.some((billType) => billType.id === typeId)) throw new Error('账单类型不存在。');
@@ -252,6 +352,7 @@ export class TaroBillStore {
       ...this.data,
       billTypes: this.data.billTypes.filter((billType) => billType.id !== typeId).map((billType, index) => ({ ...billType, sortOrder: index })),
       records: this.data.records.filter((record) => record.typeId !== typeId),
+      recurringRules: this.data.recurringRules.filter((rule) => rule.typeId !== typeId),
     });
   }
 
@@ -287,6 +388,53 @@ export class TaroBillStore {
   deleteBillRecord(recordId: string): AppData {
     if (!this.data.records.some((record) => record.id === recordId)) throw new Error('账单记录不存在。');
     return this.commit({ ...this.data, records: this.data.records.filter((record) => record.id !== recordId) });
+  }
+
+  // 新建任务从创建日开始计算补账，进度字段由主进程维护，不接受外部传入。
+  createRecurringRule(input: RecurringRuleInput): AppData {
+    const validated = this.validateRuleInput(input);
+    const timestamp = nowIso();
+    return this.commit({
+      ...this.data,
+      recurringRules: [
+        ...this.data.recurringRules,
+        {
+          id: randomUUID(),
+          ...validated,
+          lastGeneratedDate: '',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    });
+  }
+
+  // 编辑任务保留生成进度，已生成过的周期不会因为修改时间或频率而重复记账。
+  // 停用时把进度推进到当天：停用期间（含当天剩余触发）一律不记账，重新启用也不会补这段账单。
+  updateRecurringRule(ruleId: string, input: RecurringRuleInput): AppData {
+    const previous = this.data.recurringRules.find((rule) => rule.id === ruleId);
+    if (!previous) throw new Error('周期任务不存在。');
+    const validated = this.validateRuleInput(input);
+    const pausedNow = previous.enabled && !validated.enabled;
+    const lastGeneratedDate = pausedNow ? getLocalDateKey(new Date()) : previous.lastGeneratedDate;
+    return this.commit({
+      ...this.data,
+      recurringRules: this.data.recurringRules.map((rule) =>
+        rule.id === ruleId ? { ...rule, ...validated, lastGeneratedDate, updatedAt: nowIso() } : rule,
+      ),
+    });
+  }
+
+  // 删除任务不影响已生成的账单，它们继续保留自动记账标识。
+  deleteRecurringRule(ruleId: string): AppData {
+    if (!this.data.recurringRules.some((rule) => rule.id === ruleId)) throw new Error('周期任务不存在。');
+    return this.commit({ ...this.data, recurringRules: this.data.recurringRules.filter((rule) => rule.id !== ruleId) });
+  }
+
+  // 启动和定时检查共用的补账入口：有实际生成时提交写盘并返回新数据，否则返回 null 避免无谓 IO。
+  applyRecurringRules(now: Date): AppData | null {
+    const next = applyRecurringRulesToData(this.data, now);
+    return next ? this.commit(next) : null;
   }
 
   // 设置页只修改主题，窗口位置由主进程独立保存，避免旧界面状态覆盖最新 Bounds。

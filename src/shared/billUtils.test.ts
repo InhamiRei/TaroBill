@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createCalendarCells,
   filterRecordsByPeriod,
+  formatAmountForInput,
   formatLocalDateTime,
   isValidLocalDateTime,
   parseAmountToCents,
@@ -36,6 +37,13 @@ describe('金额转换', () => {
     expect(parseAmountToCents('-2')).toBeNull();
     expect(parseAmountToCents('1.234')).toBeNull();
     expect(parseAmountToCents('abc')).toBeNull();
+  });
+
+  it('编辑表单金额文本去掉多余的零并与解析互逆', () => {
+    expect(formatAmountForInput(3500)).toBe('35');
+    expect(formatAmountForInput(5490)).toBe('54.9');
+    expect(formatAmountForInput(1)).toBe('0.01');
+    expect(parseAmountToCents(formatAmountForInput(5499))).toBe(5499);
   });
 });
 
@@ -103,5 +111,16 @@ describe('标题搜索', () => {
     expect(searchRecordsByKeyword(records, '')).toEqual([]);
     expect(searchRecordsByKeyword(records, '   ')).toEqual([]);
     expect(searchRecordsByKeyword(records, '35')).toEqual([]);
+  });
+
+  it('只看自动记账时过滤手动账单，空关键词列出全部自动账单', () => {
+    const withAuto = [
+      { ...createRecord('2026-07-01T10:25', 3500, 'a'), content: 'ChatGPT 订阅', ruleId: 'rule-1' },
+      { ...createRecord('2026-07-02T12:00', 4990, 'b'), content: 'Claude 订阅' },
+      { ...createRecord('2026-08-01T09:00', 2000, 'c'), content: 'chatgpt 充值', ruleId: 'rule-2' },
+    ];
+    expect(searchRecordsByKeyword(withAuto, '', true).map((record) => record.id)).toEqual(['c', 'a']);
+    expect(searchRecordsByKeyword(withAuto, '订阅', true).map((record) => record.id)).toEqual(['a']);
+    expect(searchRecordsByKeyword(withAuto, 'claude', true)).toEqual([]);
   });
 });

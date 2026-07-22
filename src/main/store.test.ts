@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { getLocalDateKey } from '../shared/recurringUtils';
 import { normalizeData, TaroBillStore } from './store';
 import { createDefaultAppData } from '../shared/types';
 import type { BillRecordIcon } from '../shared/types';
@@ -113,5 +114,162 @@ describe('TaroBillStore', () => {
     const normalized = normalizeData(input);
     expect(normalized.billTypes.map((item) => item.name)).toEqual(['订阅', '订阅 2', '订阅 3']);
     expect(normalized.settings.window).toEqual({ x: 11, y: undefined, width: 1360, height: 900 });
+  });
+});
+
+describe('周期任务', () => {
+  // 任务输入工厂给出合法的每周一 08:00 默认值，各场景只覆盖差异字段。
+  const createRuleInput = (typeId: string) => ({
+    name: '每日公交',
+    typeId,
+    icon: 'sparkles' as const,
+    content: '公交地铁',
+    amountCents: 200,
+    frequency: 'weekly' as const,
+    timeOfDay: '08:00',
+    weekday: 1,
+    enabled: true,
+  });
+
+  it('新建、编辑和删除任务会写回 JSON，无关字段按频率清空', () => {
+    const store = createStore();
+    const typeId = store.get().billTypes[0].id;
+    let data = store.createRecurringRule({ ...createRuleInput(typeId), monthDay: 15 });
+    expect(data.recurringRules).toHaveLength(1);
+    expect(data.recurringRules[0].weekday).toBe(1);
+    expect(data.recurringRules[0].monthDay).toBeUndefined();
+    expect(data.recurringRules[0].lastGeneratedDate).toBe('');
+
+    const ruleId = data.recurringRules[0].id;
+    data = store.updateRecurringRule(ruleId, { ...createRuleInput(typeId), name: ' 每日打车 ', content: '打车' });
+    expect(data.recurringRules[0].name).toBe('每日打车');
+    expect(data.recurringRules[0].content).toBe('打车');
+
+    const onDisk = JSON.parse(readFileSync(path.join(temporaryDirectories[0], 'data.json'), 'utf8')) as typeof data;
+    expect(onDisk.recurringRules[0].name).toBe('每日打车');
+
+    data = store.deleteRecurringRule(ruleId);
+    expect(data.recurringRules).toHaveLength(0);
+    expect(() => store.deleteRecurringRule(ruleId)).toThrow('周期任务不存在');
+  });
+
+  it('拒绝空任务名称、非法频率、缺失的星期日期和不存在的类型', () => {
+    const store = createStore();
+    const typeId = store.get().billTypes[0].id;
+    expect(() => store.createRecurringRule({ ...createRuleInput(typeId), name: '   ' })).toThrow('任务名称不能为空');
+    expect(() => store.createRecurringRule({ ...createRuleInput(typeId), weekday: undefined })).toThrow('每周任务需要选择星期');
+    expect(() => store.createRecurringRule({ ...createRuleInput(typeId), frequency: 'monthly', monthDay: 32 })).toThrow('每月任务需要选择日期');
+    expect(() => store.createRecurringRule({ ...createRuleInput(typeId), typeId: 'missing-type' })).toThrow('账单类型不存在');
+    expect(() => store.createRecurringRule({ ...createRuleInput(typeId), timeOfDay: '25:00' })).toThrow('执行时间无效');
+  });
+
+  it('停用任务会把生成进度推进到当天，重新启用也不补停用期间的账单', () => {
+    const store = createStore();
+    const typeId = store.get().billTypes[0].id;
+    let data = store.createRecurringRule({ ...createRuleInput(typeId), frequency: 'daily', weekday: undefined });
+    const ruleId = data.recurringRules[0].id;
+    const todayKey = getLocalDateKey(new Date());
+
+    data = store.updateRecurringRule(ruleId, { ...createRuleInput(typeId), frequency: 'daily', enabled: false });
+    expect(data.recurringRules[0].enabled).toBe(false);
+    expect(data.recurringRules[0].lastGeneratedDate).toBe(todayKey);
+
+    // 重新启用后进度保持，不会把停用期间错过的周期补成账单。
+    data = store.updateRecurringRule(ruleId, { ...createRuleInput(typeId), frequency: 'daily', enabled: true });
+    expect(data.recurringRules[0].lastGeneratedDate).toBe(todayKey);
+    expect(store.applyRecurringRules(new Date())).toBeNull();
+    expect(store.get().records).toHaveLength(0);
+  });
+
+  it('删除类型会级联删除其周期任务', () => {
+    const store = createStore();
+    const firstTypeId = store.get().billTypes[0].id;
+    store.createRecurringRule(createRuleInput(firstTypeId));
+
+    const data = store.deleteBillType(firstTypeId);
+    expect(data.recurringRules).toHaveLength(0);
+  });
+
+  it('补账生成带任务标识的账单，重复执行不再生成', () => {
+    const store = createStore();
+    const typeId = store.get().billTypes[0].id;
+    store.createRecurringRule({ ...createRuleInput(typeId), frequency: 'daily', weekday: undefined });
+
+    const data = store.applyRecurringRules(new Date());
+    expect(data).not.toBeNull();
+    expect(data?.records).toHaveLength(1);
+    expect(data?.records[0].ruleId).toBe(data?.recurringRules[0].id);
+    expect(data?.records[0].occurredAt.endsWith('T08:00')).toBe(true);
+    expect(data?.recurringRules[0].lastGeneratedDate).toBe(data?.records[0].occurredAt.slice(0, 10));
+
+    expect(store.applyRecurringRules(new Date())).toBeNull();
+    expect(store.get().records).toHaveLength(1);
+  });
+
+  it('旧备份缺少任务字段时按空列表处理，账单保留自动记账标识', () => {
+    const legacyData = createDefaultAppData() as unknown as Record<string, unknown>;
+    delete legacyData.recurringRules;
+    legacyData.records = [
+      {
+        id: 'auto-record',
+        typeId: 'ai-bills',
+        icon: 'sparkles',
+        content: '公交地铁',
+        amountCents: 200,
+        occurredAt: '2026-07-14T08:00',
+        ruleId: 'some-rule',
+        createdAt: '2026-07-14T00:00:00.000Z',
+        updatedAt: '2026-07-14T00:00:00.000Z',
+      },
+    ];
+
+    const normalized = normalizeData(legacyData);
+    expect(normalized.recurringRules).toEqual([]);
+    expect(normalized.records[0].ruleId).toBe('some-rule');
+  });
+
+  it('导入时丢弃归属缺失类型或缺少星期日期的任务', () => {
+    const input = createDefaultAppData() as unknown as Record<string, unknown>;
+    input.recurringRules = [
+      { id: 'ok', typeId: 'ai-bills', icon: 'sparkles', content: '公交', amountCents: 200, frequency: 'daily', timeOfDay: '08:00', enabled: true },
+      {
+        id: 'bad-type',
+        typeId: 'missing',
+        icon: 'sparkles',
+        content: '公交',
+        amountCents: 200,
+        frequency: 'daily',
+        timeOfDay: '08:00',
+        enabled: true,
+      },
+      {
+        id: 'bad-week',
+        typeId: 'ai-bills',
+        icon: 'sparkles',
+        content: '周报',
+        amountCents: 100,
+        frequency: 'weekly',
+        timeOfDay: '08:00',
+        enabled: true,
+      },
+      {
+        id: 'bad-time',
+        typeId: 'ai-bills',
+        icon: 'sparkles',
+        content: '月租',
+        amountCents: 100,
+        frequency: 'monthly',
+        monthDay: 1,
+        timeOfDay: '8点',
+        enabled: true,
+      },
+    ];
+
+    const normalized = normalizeData(input);
+    expect(normalized.recurringRules.map((rule) => rule.id)).toEqual(['ok']);
+    // 早期数据没有任务名称字段，回退用账单标题作为展示名。
+    expect(normalized.recurringRules[0].name).toBe('公交');
+    expect(normalized.recurringRules[0].lastGeneratedDate).toBe('');
+    expect(normalized.recurringRules[0].enabled).toBe(true);
   });
 });

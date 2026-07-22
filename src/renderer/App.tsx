@@ -1,4 +1,5 @@
 import {
+  Bot,
   CalendarDays,
   ChartNoAxesCombined,
   ChevronLeft,
@@ -17,13 +18,16 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCny, filterRecordsByPeriod, summarizeAllTime, summarizeMonth, summarizeYear } from '../shared/billUtils';
-import type { AppData, BillRecord, BillRecordInput, BillType, ThemeMode } from '../shared/types';
+import { toRuleInput } from '../shared/recurringUtils';
+import type { AppData, BillRecord, BillRecordInput, BillType, RecurringRule, RecurringRuleInput, ThemeMode } from '../shared/types';
 import { BillList } from './components/BillList';
 import { CalendarGrid } from './components/CalendarGrid';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import type { ConfirmDialogState } from './components/ConfirmDialog';
 import { ExpenseChart, ExpenseWeeklyChart } from './components/ExpenseChart';
 import { RecordEditor } from './components/RecordEditor';
+import { RecurringPanel } from './components/RecurringPanel';
+import { RecurringRuleEditor } from './components/RecurringRuleEditor';
 import { ResizeHandles } from './components/ResizeHandles';
 import { SearchDialog } from './components/SearchDialog';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -45,6 +49,7 @@ function App() {
   const [data, setData] = useState<AppData | null>(null);
   const [loadError, setLoadError] = useState('');
   const [activeTypeId, setActiveTypeId] = useState('');
+  const [workspaceView, setWorkspaceView] = useState<'bills' | 'recurring'>('bills');
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -52,6 +57,7 @@ function App() {
   const [maximized, setMaximized] = useState(false);
   const [recordEditor, setRecordEditor] = useState<BillRecord | null | undefined>(undefined);
   const [typeEditor, setTypeEditor] = useState<BillType | null | undefined>(undefined);
+  const [ruleEditor, setRuleEditor] = useState<RecurringRule | null | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
@@ -107,6 +113,9 @@ function App() {
     return () => removeListener();
   }, []);
 
+  // 主进程定时生成周期账单后推送完整数据，此处订阅保持界面实时刷新。
+  useEffect(() => api.onDataChanged((nextData) => setData(nextData)), []);
+
   const theme = data?.settings.theme ?? 'light';
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -134,6 +143,7 @@ function App() {
     for (const record of data?.records ?? []) counts.set(record.typeId, (counts.get(record.typeId) ?? 0) + 1);
     return counts;
   }, [data?.records]);
+  const enabledRuleCount = useMemo(() => (data?.recurringRules ?? []).filter((rule) => rule.enabled).length, [data?.recurringRules]);
 
   // 所有业务写入统一捕获异常并刷新 AppData，弹窗可以据返回值决定是否关闭。
   const runMutation = async (operation: () => Promise<AppData>, successMessage: string): Promise<boolean> => {
@@ -202,6 +212,32 @@ function App() {
       confirmLabel: '删除账单',
       danger: true,
       onConfirm: () => runMutation(() => api.deleteBillRecord(record.id), '账单已删除').then(() => undefined),
+    });
+  };
+
+  // 任务保存根据是否存在 ID 分发到新建或编辑通道。
+  const saveRule = async (ruleId: string | null, input: RecurringRuleInput): Promise<boolean> => {
+    return ruleId
+      ? runMutation(() => api.updateRecurringRule(ruleId, input), '周期任务已更新')
+      : runMutation(() => api.createRecurringRule(input), '周期任务已保存');
+  };
+
+  // 启停切换走完整更新通道，进度字段由主进程保留，停用期间不会补账。
+  const toggleRule = (rule: RecurringRule) => {
+    void runMutation(
+      () => api.updateRecurringRule(rule.id, { ...toRuleInput(rule), enabled: !rule.enabled }),
+      rule.enabled ? '任务已停用' : '任务已启用',
+    );
+  };
+
+  // 删除任务前明确告知已生成的账单会保留，避免误以为连带清空历史。
+  const requestRuleDelete = (rule: RecurringRule) => {
+    setConfirmDialog({
+      title: '删除这个周期任务？',
+      message: `“${rule.name}”将不再自动记账，已生成的账单会保留并继续显示「自动」标识。`,
+      confirmLabel: '删除任务',
+      danger: true,
+      onConfirm: () => runMutation(() => api.deleteRecurringRule(rule.id), '周期任务已删除').then(() => undefined),
     });
   };
 
@@ -317,6 +353,16 @@ function App() {
             <strong>TaroBill</strong>
             <span className="brand-version">v{__APP_VERSION__}</span>
           </div>
+          <nav className="sidebar-recurring no-drag">
+            <button
+              className={workspaceView === 'recurring' ? 'recurring-entry active' : 'recurring-entry'}
+              onClick={() => setWorkspaceView('recurring')}
+            >
+              <Bot size={18} />
+              <span>自动记账</span>
+              <em>{enabledRuleCount}</em>
+            </button>
+          </nav>
           <div className="sidebar-heading">
             <Tag size={18} />
             <span>账单类型</span>
@@ -328,8 +374,14 @@ function App() {
             {data.billTypes.map((billType) => {
               const active = billType.id === activeType.id;
               return (
-                <div className={active ? 'type-row active' : 'type-row'} key={billType.id}>
-                  <button className="type-select" onClick={() => setActiveTypeId(billType.id)}>
+                <div className={active && workspaceView === 'bills' ? 'type-row active' : 'type-row'} key={billType.id}>
+                  <button
+                    className="type-select"
+                    onClick={() => {
+                      setActiveTypeId(billType.id);
+                      setWorkspaceView('bills');
+                    }}
+                  >
                     <span className="type-name">{billType.name}</span>
                     <em>{typeCounts.get(billType.id) ?? 0}</em>
                   </button>
@@ -354,83 +406,96 @@ function App() {
         </aside>
 
         <section className="workspace">
-          <header className="topbar">
-            <div className="page-title">
-              <h1>{activeType.name}</h1>
-              <button className="icon-button page-search" title="搜索账单标题" onClick={() => setSearchOpen(true)}>
-                <Search size={16} />
-              </button>
-            </div>
-            <div className="topbar-actions no-drag">
-              <div className="period-navigator">
-                <button className="icon-button" title="上个月" onClick={() => shiftPeriod(-1)}>
-                  <ChevronLeft size={17} />
-                </button>
-                <strong>
-                  {selectedYear}年{selectedMonth + 1}月
-                </strong>
-                <button className="icon-button" title="下个月" onClick={() => shiftPeriod(1)}>
-                  <ChevronRight size={17} />
-                </button>
-                <button className="today-button" onClick={resetPeriod}>
-                  本月
-                </button>
-              </div>
-              {isWindows && <WindowControls maximized={maximized} />}
-            </div>
-          </header>
-
-          <div className="dashboard">
-            <section className="analytics-pane">
-              {/* 三张统计卡统一使用带边框的图标容器，保证信息层级和视觉样式一致。 */}
-              <div className="stats-grid">
-                <article className="stat-card">
-                  <span className="stat-icon">
-                    <CalendarDays size={18} />
-                  </span>
-                  <div>
-                    <small>月支出</small>
-                    <strong>{formatCny(monthSummary.totalCents)}</strong>
-                  </div>
-                </article>
-                <ToggleStatCard
-                  icon={<ChartNoAxesCombined size={18} />}
-                  label="年支出"
-                  altLabel="总支出"
-                  value={formatCny(yearSummary.totalCents)}
-                  altValue={formatCny(allTimeTotal)}
-                  toggled={showAllTimeExpense}
-                  onToggle={() => setShowAllTimeExpense((prev) => !prev)}
-                />
-                <ToggleStatCard
-                  icon={<Receipt size={18} />}
-                  label="账单数"
-                  altLabel="账单总数"
-                  value={String(visibleRecords.length)}
-                  altValue={String(activeRecords.length)}
-                  toggled={showTotalCount}
-                  onToggle={() => setShowTotalCount((prev) => !prev)}
-                />
-              </div>
-              <div className="charts-row">
-                <ExpenseChart values={monthSummary.dailyTotals} />
-                <ExpenseWeeklyChart records={activeRecords} year={selectedYear} monthIndex={selectedMonth} selectedDate={selectedDate} />
-              </div>
-              <CalendarGrid
-                year={selectedYear}
-                monthIndex={selectedMonth}
-                summary={monthSummary}
-                selectedDate={selectedDate}
-                onSelectDate={selectCalendarDate}
-              />
-            </section>
-            <BillList
-              records={visibleRecords}
-              onAdd={() => setRecordEditor(null)}
-              onEdit={(record) => setRecordEditor(record)}
-              onDelete={requestRecordDelete}
+          {workspaceView === 'recurring' ? (
+            <RecurringPanel
+              rules={data.recurringRules}
+              billTypes={data.billTypes}
+              onAdd={() => setRuleEditor(null)}
+              onEdit={(rule) => setRuleEditor(rule)}
+              onDelete={requestRuleDelete}
+              onToggle={toggleRule}
             />
-          </div>
+          ) : (
+            <>
+              <header className="topbar">
+                <div className="page-title">
+                  <h1>{activeType.name}</h1>
+                  <button className="icon-button page-search" title="搜索账单标题" onClick={() => setSearchOpen(true)}>
+                    <Search size={16} />
+                  </button>
+                </div>
+                <div className="topbar-actions no-drag">
+                  <div className="period-navigator">
+                    <button className="icon-button" title="上个月" onClick={() => shiftPeriod(-1)}>
+                      <ChevronLeft size={17} />
+                    </button>
+                    <strong>
+                      {selectedYear}年{selectedMonth + 1}月
+                    </strong>
+                    <button className="icon-button" title="下个月" onClick={() => shiftPeriod(1)}>
+                      <ChevronRight size={17} />
+                    </button>
+                    <button className="today-button" onClick={resetPeriod}>
+                      本月
+                    </button>
+                  </div>
+                  {isWindows && <WindowControls maximized={maximized} />}
+                </div>
+              </header>
+
+              <div className="dashboard">
+                <section className="analytics-pane">
+                  {/* 三张统计卡统一使用带边框的图标容器，保证信息层级和视觉样式一致。 */}
+                  <div className="stats-grid">
+                    <article className="stat-card">
+                      <span className="stat-icon">
+                        <CalendarDays size={18} />
+                      </span>
+                      <div>
+                        <small>月支出</small>
+                        <strong>{formatCny(monthSummary.totalCents)}</strong>
+                      </div>
+                    </article>
+                    <ToggleStatCard
+                      icon={<ChartNoAxesCombined size={18} />}
+                      label="年支出"
+                      altLabel="总支出"
+                      value={formatCny(yearSummary.totalCents)}
+                      altValue={formatCny(allTimeTotal)}
+                      toggled={showAllTimeExpense}
+                      onToggle={() => setShowAllTimeExpense((prev) => !prev)}
+                    />
+                    <ToggleStatCard
+                      icon={<Receipt size={18} />}
+                      label="账单数"
+                      altLabel="账单总数"
+                      value={String(visibleRecords.length)}
+                      altValue={String(activeRecords.length)}
+                      toggled={showTotalCount}
+                      onToggle={() => setShowTotalCount((prev) => !prev)}
+                    />
+                  </div>
+                  <div className="charts-row">
+                    <ExpenseChart values={monthSummary.dailyTotals} />
+                    <ExpenseWeeklyChart records={activeRecords} year={selectedYear} monthIndex={selectedMonth} selectedDate={selectedDate} />
+                  </div>
+                  <CalendarGrid
+                    year={selectedYear}
+                    monthIndex={selectedMonth}
+                    summary={monthSummary}
+                    selectedDate={selectedDate}
+                    onSelectDate={selectCalendarDate}
+                  />
+                </section>
+                <BillList
+                  records={visibleRecords}
+                  onAdd={() => setRecordEditor(null)}
+                  onEdit={(record) => setRecordEditor(record)}
+                  onDelete={requestRecordDelete}
+                />
+              </div>
+            </>
+          )}
         </section>
 
         {/* 搜索弹窗在编辑弹窗之前渲染，点击结果后编辑弹窗叠在上层，关闭后回到原搜索结果。 */}
@@ -459,6 +524,15 @@ function App() {
             initialName={typeEditor?.name}
             onClose={() => setTypeEditor(undefined)}
             onSave={saveType}
+          />
+        )}
+        {ruleEditor !== undefined && (
+          <RecurringRuleEditor
+            key={ruleEditor?.id ?? 'new-rule'}
+            billTypes={data.billTypes}
+            rule={ruleEditor}
+            onClose={() => setRuleEditor(undefined)}
+            onSave={saveRule}
           />
         )}
         {settingsOpen && (
